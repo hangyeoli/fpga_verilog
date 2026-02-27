@@ -11,73 +11,113 @@ module play_melody(
     output buzzer
     );
 
-    //input clk: 100MHz
-    //output frequency
-    //(100MHz / division / 2)
-    //DO 261.63Hz, RE 293.66Hz, MI 329.63Hz, SOL 392.00Hz, LA 440.00Hz
-    localparam DO = 22'd191_112;
-    localparam RE = 22'd170_262;
-    localparam MI = 22'd151_686;
-    localparam SOL = 22'd127_551;
-    localparam LA = 22'd113_636;
-    
-    reg[21:0] r_clk_cnt[4:0];
-    reg [4:0] r_buzzer_frequency;
-    // index mapping: [0]=btnU, [1]=btnL, [2]=btnC, [3]=btnR, [4]=btnD
-    wire [4:0] btn_ary = {btnD, btnR, btnC, btnL, btnU};
+    localparam integer STEP_TICKS = 23'd7_000_000;  // 70ms @ 100MHz
 
-    integer i;  //integer : signed, 32-bit , reg [31:0] : unsigned, 32-bit
-    always @(posedge clk, posedge reset) begin
-    if (reset) begin
-        for (i=0; i < 5; i=i+1) begin
-            r_clk_cnt[i] <= 22'd0;
-            r_buzzer_frequency[i] <= 1'b0;
-        end
-    end else begin   // update every 10ns
-        // DO(btnU) 261.63Hz
-        if (!btn_ary[0]) begin
-            r_clk_cnt[0] <= 0;
-            r_buzzer_frequency[0] <= 1'b0;
-        end else if (r_clk_cnt[0] >= DO-1) begin
-            r_clk_cnt[0] <= 0;
-            r_buzzer_frequency[0] <= ~r_buzzer_frequency[0];
-        end else r_clk_cnt[0] <= r_clk_cnt[0] + 1;
-        // RE(btnL) 293.66Hz
-        if (!btn_ary[1]) begin
-            r_clk_cnt[1] <= 0;
-            r_buzzer_frequency[1] <= 1'b0;
-        end else if (r_clk_cnt[1] >= RE-1) begin
-            r_clk_cnt[1] <= 0;
-            r_buzzer_frequency[1] <= ~r_buzzer_frequency[1];
-        end else r_clk_cnt[1] <= r_clk_cnt[1] + 1;
-        // MI(btnC) 329.63Hz
-        if (!btn_ary[2]) begin
-            r_clk_cnt[2] <= 0;
-            r_buzzer_frequency[2] <= 1'b0;
-        end else if (r_clk_cnt[2] >= MI-1) begin
-            r_clk_cnt[2] <= 0;
-            r_buzzer_frequency[2] <= ~r_buzzer_frequency[2];
-        end else r_clk_cnt[2] <= r_clk_cnt[2] + 1;
-        // SOL(btnR) 392.00Hz
-        if (!btn_ary[3]) begin
-            r_clk_cnt[3] <= 0;
-            r_buzzer_frequency[3] <= 1'b0;
-        end else if (r_clk_cnt[3] >= SOL-1) begin
-            r_clk_cnt[3] <= 0;
-            r_buzzer_frequency[3] <= ~r_buzzer_frequency[3];
-        end else r_clk_cnt[3] <= r_clk_cnt[3] + 1;
-        // LA(btnD) 440.00Hz
-        if (!btn_ary[4]) begin
-            r_clk_cnt[4] <= 0;
-            r_buzzer_frequency[4] <= 1'b0;
-        end else if (r_clk_cnt[4] >= LA-1) begin
-            r_clk_cnt[4] <= 0;
-            r_buzzer_frequency[4] <= ~r_buzzer_frequency[4];
-        end else r_clk_cnt[4] <= r_clk_cnt[4] + 1;
+    localparam [1:0] MODE_NONE  = 2'd0;
+    localparam [1:0] MODE_POWER = 2'd1;
+    localparam [1:0] MODE_OPEN  = 2'd2;
+
+    reg [1:0] mode;
+    reg [2:0] step;
+
+    reg [22:0] step_cnt;
+    reg [18:0] tone_cnt;
+    reg buzzer_reg;
+
+    reg btnL_d;
+    reg btnR_d;
+
+    wire btnL_rise = btnL & ~btnL_d;
+    wire btnR_rise = btnR & ~btnR_d;
+
+    reg [18:0] half_period;
+    reg tone_enable;
+
+    always @(*) begin
+        half_period = 19'd0;
+        tone_enable = 1'b0;
+
+        case (mode)
+            MODE_POWER: begin
+                case (step)
+                    3'd0: begin half_period = 19'd45_455; tone_enable = 1'b1; end  // 1.1kHz
+                    3'd1: begin half_period = 19'd22_727; tone_enable = 1'b1; end  // 2.2kHz
+                    3'd2: begin half_period = 19'd15_152; tone_enable = 1'b1; end  // 3.3kHz
+                    3'd3: begin half_period = 19'd11_364; tone_enable = 1'b1; end  // 4.4kHz
+                    default: begin half_period = 19'd0; tone_enable = 1'b0; end     // no beep
+                endcase
+            end
+            MODE_OPEN: begin
+                case (step)
+                    3'd0: begin half_period = 19'd191_571; tone_enable = 1'b1; end // 261Hz
+                    3'd1: begin half_period = 19'd151_976; tone_enable = 1'b1; end // 329Hz
+                    3'd2: begin half_period = 19'd127_551; tone_enable = 1'b1; end // 392Hz
+                    3'd3: begin half_period = 19'd90_253;  tone_enable = 1'b1; end // 554Hz
+                    default: begin half_period = 19'd0; tone_enable = 1'b0; end     // no beep
+                endcase
+            end
+            default: begin
+                half_period = 19'd0;
+                tone_enable = 1'b0;
+            end
+        endcase
     end
-end
 
-    // OR reduction of all generated tones
-    assign buzzer = |r_buzzer_frequency;
+    always @(posedge clk or posedge reset) begin
+        if (reset) begin
+            mode <= MODE_NONE;
+            step <= 3'd0;
+            step_cnt <= 23'd0;
+            tone_cnt <= 19'd0;
+            buzzer_reg <= 1'b0;
+            btnL_d <= 1'b0;
+            btnR_d <= 1'b0;
+        end else begin
+            btnL_d <= btnL;
+            btnR_d <= btnR;
+
+            if (mode == MODE_NONE) begin
+                step <= 3'd0;
+                step_cnt <= 23'd0;
+                tone_cnt <= 19'd0;
+                buzzer_reg <= 1'b0;
+
+                if (btnL_rise) begin
+                    mode <= MODE_POWER;
+                end else if (btnR_rise) begin
+                    mode <= MODE_OPEN;
+                end
+            end else begin
+                if (step_cnt >= STEP_TICKS - 1) begin
+                    step_cnt <= 23'd0;
+                    tone_cnt <= 19'd0;
+                    buzzer_reg <= 1'b0;
+
+                    if (step == 3'd4) begin
+                        mode <= MODE_NONE;
+                        step <= 3'd0;
+                    end else begin
+                        step <= step + 3'd1;
+                    end
+                end else begin
+                    step_cnt <= step_cnt + 23'd1;
+
+                    if (tone_enable) begin
+                        if (tone_cnt >= half_period - 1) begin
+                            tone_cnt <= 19'd0;
+                            buzzer_reg <= ~buzzer_reg;
+                        end else begin
+                            tone_cnt <= tone_cnt + 19'd1;
+                        end
+                    end else begin
+                        tone_cnt <= 19'd0;
+                        buzzer_reg <= 1'b0;
+                    end
+                end
+            end
+        end
+    end
+
+    assign buzzer = buzzer_reg;
 
 endmodule
