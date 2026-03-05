@@ -13,6 +13,8 @@ module top(
     output uartTx,
     input uartRx
 );
+    wire [7:0] w_rx_data;
+    wire w_rx_done;
 
     wire uart_tx_busy;
     wire uart_tx_done;

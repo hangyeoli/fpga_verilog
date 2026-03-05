@@ -31,7 +31,7 @@ module uart_controller(
     ) u_uart_tx (
         .clk(clk),
         .reset(reset),
-        .tx_data(w_tx_data),
+        .tx_data(send_data),
         .tx_start(w_tx_start),
         .tx(tx),
         .tx_done(w_tx_done),
