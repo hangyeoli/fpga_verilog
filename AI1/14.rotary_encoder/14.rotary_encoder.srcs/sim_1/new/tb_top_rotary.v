@@ -41,8 +41,31 @@ module tb_top_rotary();
         // CW 00 --> 10 --> 11 --> 01 --> 00
         $display("CW TEST start......");
         make_btn_noise(0); s1 =1; #3000; // 200cycle (10us x 200) : noise 보다 긴 3000ns 대기
-        
+        make_btn_noise(1); s2 =1; #3000;
+        s1 =0; #3000;
+        s2 =0; #3000;
 
+        // CCW 00 --> 01 --> 11 --> 10 --> 00
+        $display("CCW TEST start......");
+        s2 =1; #3000;
+        make_btn_noise(0); s1 =1; #3000;
+        s2 =0; #3000;
+        s1 =0; #3000;
+
+        // KEY btn toggle test
+        $display("KEY btn toggle TEST start......");
+        make_btn_noise(2); key =1; #3000;
+        key =0; #3000;
+
+        $display("TEST finish......");
+        $finish;
+
+    end
+
+    //모니터링 출력
+    initial begin
+        $monitor("time=%t, r_counter:%h r_direction:%b r_led_toggle:%b"
+                 , $time, led[7:0], led[15:14], led[13]);
     end
 
 endmodule
